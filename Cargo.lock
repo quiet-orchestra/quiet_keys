@@ -2659,7 +2659,7 @@ dependencies = [
 
 [[package]]
 name = "quiet_keys"
-version = "26.10.24"
+version = "26.11.1"
 dependencies = [
  "eframe",
  "egui",

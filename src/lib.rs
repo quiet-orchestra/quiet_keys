@@ -6,5 +6,5 @@ pub use app::TemplateApp;
 mod keyboardlayout;
 pub use keyboardlayout::*;
 
-mod angles;
-pub use angles::Angle;
+mod angle_types;
+pub use angle_types::Angle;

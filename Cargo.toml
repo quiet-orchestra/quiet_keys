@@ -1,6 +1,6 @@
 [package]
 name = "quiet_keys"
-version = "26.10.24" #Keep date format
+version = "26.11.1" #Keep date format
 authors = ["Quiet Orchestra <quietorchestra@protonmail.com>"]
 edition = "2024"
 license = "MPL-2.0 AND (MIT OR Apache-2.0)"
@@ -16,9 +16,13 @@ egui = "0.36.0"
 eframe = { version = "0.36.0", features = ["persistence"] }
 log = "0.4.27"
 
+#Application dependencies
+num-traits = "0.2.19"
+
+
 # You only need serde if you want app persistence:
 serde = { version = "1.0.219", features = ["derive"] }
-num-traits = "0.2.19"
+
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

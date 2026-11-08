@@ -11,7 +11,7 @@ pub struct KeyboardLayout {
     pub metadata: String,
     pub physical_layout: PhysicalLayout,
     pub firmware_layout: FirmwareLayout,
-    pub character_layout: CharacterLayout,
+    pub key_output_layout: KeyOutputLayout,
 }
 
 impl KeyboardLayout {
@@ -20,10 +20,10 @@ impl KeyboardLayout {
         let (mut switch_maps , mut  hid_keycode_maps, mut  key_output_maps ) = (Vec::new(), Vec::new(), Vec::new());
         for key in keylist.keylist {
             switch_maps.push(key.switch_map);
-            hid_keycode_maps.push(key.hid_keycode_map);
-            key_output_maps.push(key.key_output_map);
+            hid_keycode_maps.extend(key.hid_keycode_maps);
+            key_output_maps.extend(key.key_output_maps);
         };
-        let (physical_layout , firmware_layout, character_layout ) = (
+        let (physical_layout , firmware_layout, key_output_layout ) = (
             PhysicalLayout {
                 metadata: keylist.physical_metadata,
                 switch_maps,
@@ -32,8 +32,8 @@ impl KeyboardLayout {
                 metadata: keylist.firmware_metadata,
                 hid_keycode_maps,
             },
-            CharacterLayout {
-                metadata: keylist.character_metadata,
+            KeyOutputLayout {
+                metadata: keylist.key_output_metadata,
                 key_output_maps,
             },
         );
@@ -42,7 +42,7 @@ impl KeyboardLayout {
             metadata: keylist.metadata, 
             physical_layout, 
             firmware_layout, 
-            character_layout, 
+            key_output_layout, 
         }
     }
 }
@@ -60,7 +60,7 @@ pub struct FirmwareLayout {
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
-pub struct CharacterLayout {
+pub struct KeyOutputLayout {
     pub metadata: String,
     pub key_output_maps: Vec<KeyOutputMap>,
 }
@@ -70,7 +70,7 @@ pub struct KeyList {
     pub metadata: String,
     pub physical_metadata: String,
     pub firmware_metadata: String,
-    pub character_metadata: String,
+    pub key_output_metadata: String,
     pub keylist: Vec<Key>
 }
 
@@ -83,28 +83,31 @@ pub struct KeyboardKeyBuilder {
 }
 
 impl KeyboardKeyBuilder {
-    fn new() -> Self{
+    pub fn new() -> Self{
         KeyboardKeyBuilder::default()
     }
-    fn quick_key_symbolic(&mut self, text: String, text_two: Option<String>, keycode_id: u16) {
-
+    pub fn quick_key_symbolic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
+        todo!()
     }
-    fn quick_key_alphabetic(&mut self, text: String, text_two: Option<String>, keycode_id: u16) {
-
+    pub fn quick_key_numpad_math(&mut self, text: impl Into<String>, keycode_id: u16) -> Key {
+        todo!()
     }
-    fn quick_key_modifier(&mut self, label: String, modifier: Modifier, keycode_id: u16) {
-
+    pub fn quick_key_alphabetic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
+        todo!()
+    }
+    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier: Modifier, keycode_id: u16) -> Key {
+        todo!()
     }    
-    fn quick_key_action(&mut self, label: String, keycode_id: u16) {
-
+    pub fn quick_key_action(&mut self, label: impl Into<String>, keycode_id: u16) -> Key {
+        todo!()
     }   
-    fn set_width(&mut self, width: f32){
+    pub fn set_width(&mut self, width: f32){
         self.key_width = width;
     }
-    fn set_height(&mut self, height: f32){
+    pub fn set_height(&mut self, height: f32){
         self.key_height = height;
     }
-    fn new_row(&mut self){
+    pub fn new_row(&mut self){
         self.position.x = 0.;
         self.position.y += self.key_height;
     }
@@ -114,49 +117,38 @@ impl KeyboardKeyBuilder {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Key {
     switch_map: SwitchMap,
-    hid_keycode_map: HIDKeycodeMap,
-    key_output_map: KeyOutputMap,
+    hid_keycode_maps: Vec<HIDKeycodeMap>,
+    key_output_maps: Vec<KeyOutputMap>,
 }
 
 impl Key {
-    fn quick_key(text_one: String, text_two_and_visibility: Option<(String,bool)>, rect: Rect, rect_two: Option<Rect>, switch_id: u16, keycode: HIDKeycode) -> Self {
-        let output_one = TextOutput{
-            output_text: text_one.clone(),
-            modifiers: ModifierComposition::default(),
-            label: LabelAttributes::default().with_label(text_one),
-        };
+    fn quick_key(text_one: TextOutput, text_two: Option<TextOutput>, rect: Rect, rect_two: Option<Rect>, switch_id: u16, keycode: HIDKeycode, layer: u8) -> Self {
 
-        let mut text_output = vec![output_one];
-
-        if let Some((text_two, visibile)) = text_two_and_visibility {
-            let label = if visibile {text_two.to_string()} else {"".to_owned()};
-            let output_two = TextOutput{
-                output_text: text_two.clone(),
-                modifiers: ModifierComposition::default(),
-                label: LabelAttributes::default().with_label(label),
-            };
-            text_output.push(output_two);
+        let mut text_output = vec![text_one];
+        if let Some(text_two) = text_two {
+            text_output.push(text_two);
         }
         
         Key { 
             switch_map: SwitchMap { 
-                metadata: "".to_owned(), 
+                metadata: "". to_string(), 
                 switch_id, 
                 rect, 
                 secondary_rect: rect_two,
                 angle: Turns(0.), 
                 homing_nub: false,
             }, 
-            hid_keycode_map: HIDKeycodeMap { 
+            hid_keycode_maps: vec![HIDKeycodeMap { 
                 switch_id, 
+                layer,
                 keycode,
-            }, 
-            key_output_map: KeyOutputMap { 
+            }], 
+            key_output_maps: vec![KeyOutputMap { 
                 keycode, 
                 key_output:  KeyOutput::TextOutputs(
                     text_output
                 ),
-            }, 
+            }], 
         }
     }
 }
@@ -216,11 +208,11 @@ pub struct Point {
     pub y: f32,
 }
 
-
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct HIDKeycodeMap {
     pub switch_id: u16,
     pub keycode: HIDKeycode,
+    pub layer: u8,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -268,6 +260,9 @@ pub struct LabelAttributes {
 impl LabelAttributes {
     fn with_label(self, label: String) -> Self {
         LabelAttributes { label, ..self }
+    }
+    fn with_position(self, position: LabelPosition) -> Self {
+        LabelAttributes { position, ..self }
     }
 }
 
@@ -327,110 +322,125 @@ impl Default for LabelPosition {
 
 fn make_default_ansi_104_keyboard () -> KeyboardLayout {
 
-    let KEY_ESC: Key::default;
-    let KEY_F1
-    let KEY_F2
-    let KEY_F3
-    let KEY_F4
-    let KEY_F5
-    let KEY_F6
-    let KEY_F7
-    let KEY_F8
-    let KEY_F9
-    let KEY_F10
-    let KEY_F11
-    let KEY_F12
-    let KEY_PRTSC
-    let KEY_SCROLL_LOCK
-    let KEY_PAUSE_BREAK,
-    let KEY_TILDE_BACKTICK
-    let KEY_BANG_ONE
-    let KEY_AT_TWO
-    let KEY_HASH_THREE
-    let KEY_DOLLAR_FOUR
-    let KEY_PERCENT_FIVE
-    let KEY_CARET_SIX
-    let KEY_AMPERSAND_SEVEN
-    let KEY_STAR_EIGHT
-    let KEY_LEFT_PERENTHESIS_NINE
-    let KEY_RIGHT_PARENTHESIS_ZERO
-    let KEY_UNDERSCORE_DASH
-    let KEY_PLUS_EQUALS
-    let KEY_BACKSPACE
-    let KEY_INSERT
-    let KEY_HOME
-    let KEY_PGUP
-    let KEYPAD_NUM_LOCK
-    let KEYPAD_FORWARD_SLASH
-    let KEYPAD_STAR
-    let KEYPAD_DASH,
-    let KEY_TAB
-    let KEY_Q
-    let KEY_W
-    let KEY_E
-    let KEY_R
-    let KEY_T
-    let KEY_Y
-    let KEY_U
-    let KEY_I
-    let KEY_O
-    let KEY_P
-    let KEY_LEFT_CURLY_BRACE_LEFT_BRACKET
-    let KEY_RIGHT_CURLY_BRACE_RIGHT_BRACKET
-    let KEY_PIPE_BACKSLASH
-    let KEY_DELETE
-    let KEY_END
-    let KEY_PGDN
-    let KEYPAD_SEVEN_HOME
-    let KEYPAD_EIGHT_UP_ARROW
-    let KEYPAD_NINE_PGUP
-    let KEYPAD_PLUS,
-    let KEY_CAPSLOCK
-    let KEY_A
-    let KEY_S
-    let KEY_D
-    let KEY_F
-    let KEY_G
-    let KEY_H
-    let KEY_J
-    let KEY_K
-    let KEY_L
-    let KEY_COLON_SEMICOLON
-    let KEY_DOUBLE_QUOTE_SINGLE_QUOTE
-    let KEY_ENTER
-    let KEYPAD_FOUR_LEFT_ARROW
-    let KEYPAD_FIVE
-    let KEYPAD_SIX_RIGHT_ARROW,
-    let KEY_SHIFT_LEFT
-    let KEY_Z
-    let KEY_X
-    let KEY_C
-    let KEY_V
-    let KEY_B
-    let KEY_N
-    let KEY_M
-    let KEY_LEFT_ANGLE_BRACKET_COMMA
-    let KEY_RIGHT_ANGLE_BRACKET_PERIOD
-    let KEY_QUESTION_FORWARD_SLASH
-    let KEY_SHIFT_RIGHT
-    let KEY_UP_ARROW
-    let KEYPAD_ONE_END
-    let KEYPAD_TWO_DOWN_ARROW
-    let KEYPAD_THREE_PGDN
-    let KEYPAD_ENTER,
-    let KEY_CTRL_LEFT
-    let KEY_SUPER_LEFT
-    let KEY_ALT_LEFT
-    let KEY_SPACE
-    let KEY_ALT_RIGHT
-    let KEY_SUPER_RIGHT
-    let KEY_MENU
-    let KEY_CTRL_RIGHT
-    let KEY_LEFT_ARROW
-    let KEY_DOWN_ARROW
-    let KEY_RIGHT_ARROW
-    let KEYPAD_ZERO_INS
-    let KEYPAD_PERIOD_DEL
+    let builder = KeyboardKeyBuilder::new();
+
+    let KEY_ESC = builder.quick_key_action("ESC". to_string(), 41);
+    let KEY_F1 = builder.quick_key_action("F1". to_string(), 58 );
+    let KEY_F2 = builder.quick_key_action("F2". to_string(), 59 );
+    let KEY_F3 = builder.quick_key_action("F3". to_string(), 60 );
+    let KEY_F4 = builder.quick_key_action("F4". to_string(), 61 );
+    let KEY_F5 = builder.quick_key_action("F5". to_string(), 62 );
+    let KEY_F6 = builder.quick_key_action("F6". to_string(), 63 );
+    let KEY_F7 = builder.quick_key_action("F7". to_string(), 64 );
+    let KEY_F8 = builder.quick_key_action("F8". to_string(), 65 );
+    let KEY_F9 = builder.quick_key_action("F9". to_string(), 66 );
+    let KEY_F10 = builder.quick_key_action("F10". to_string(), 67 );
+    let KEY_F11 = builder.quick_key_action("F11". to_string(), 68 );
+    let KEY_F12 = builder.quick_key_action("F12". to_string(), 69 );
+    let KEY_PRTSC = builder.quick_key_action("PrtSc". to_string(), 70 );
+    let KEY_SCROLL_LOCK =           builder.quick_key_action("Scroll\nLock". to_string(), 71 );
+    let KEY_PAUSE_BREAK =           builder.quick_key_action("Pause\n\nBreak". to_string(), 72 );
+
+    builder.new_row();
+
+    let KEY_TILDE_GRAVE =           builder.quick_key_symbolic("~", "`", 53);
+    let KEY_BANG_ONE =              builder.quick_key_symbolic("!", "1", 30);
+    let KEY_AT_TWO =                builder.quick_key_symbolic("@", "2", 31);
+    let KEY_HASH_THREE =            builder.quick_key_symbolic("#", "3", 32);
+    let KEY_DOLLAR_FOUR =           builder.quick_key_symbolic("$", "4", 33);
+    let KEY_PERCENT_FIVE =          builder.quick_key_symbolic("%", "5", 34);
+    let KEY_CARET_SIX =             builder.quick_key_symbolic("^", "6", 35);
+    let KEY_AMPERSAND_SEVEN =       builder.quick_key_symbolic("&", "7", 36);
+    let KEY_STAR_EIGHT =            builder.quick_key_symbolic("*", "8", 37);
+    let KEY_LEFT_PERENTHESIS_NINE = builder.quick_key_symbolic("(", "9", 38);
+    let KEY_RIGHT_PARENTHESIS_ZERO = builder.quick_key_symbolic(")","1", 39);
+    let KEY_UNDERSCORE_DASH =       builder.quick_key_symbolic("_","-", 45);
+    let KEY_PLUS_EQUALS =           builder.quick_key_symbolic("+","=", 46);
+    let KEY_BACKSPACE = builder.quick_key_action("Backspace", 42);
+    let KEY_INSERT = builder.quick_key_action("Insert", 73);
+    let KEY_HOME = builder.quick_key_action("Home", 74);
+    let KEY_PGUP = builder.quick_key_action("PgUp", 75);
+    //
+    let KEYPAD_NUM_LOCK = builder.quick_key_action("Num\nLock", 131);
+    //
+    let KEYPAD_FORWARD_SLASH = builder.quick_key_numpad_math("/", 84);
+    let KEYPAD_STAR = builder.quick_key_numpad_math("*", 85);
+    let KEYPAD_DASH = builder.quick_key_numpad_math("-", 86);
+
+    builder.new_row();
+
+    let KEY_TAB = builder.quick_key_action("Tab", 43);
+    let KEY_Q = builder.quick_key_alphabetic("Q", "q", 20);
+    let KEY_W = builder.quick_key_alphabetic("w", "w", 26);
+    let KEY_E = builder.quick_key_alphabetic("E", "e", 8);
+    let KEY_R = builder.quick_key_alphabetic("R", "r", 21);
+    let KEY_T = builder.quick_key_alphabetic("T", "t", 23);
+    let KEY_Y = builder.quick_key_alphabetic("Y", "y", 28);
+    let KEY_U = builder.quick_key_alphabetic("U", "u", 24);
+    let KEY_I = builder.quick_key_alphabetic("I", "i", 12);
+    let KEY_O = builder.quick_key_alphabetic("O", "o", 18);
+    let KEY_P = builder.quick_key_alphabetic("P", "p", 19);
+    let KEY_LEFT_CURLY_BRACE_LEFT_BRACKET = builder.quick_key_symbolic("{", "[", keycode_id);
+    let KEY_RIGHT_CURLY_BRACE_RIGHT_BRACKET = 
+    let KEY_PIPE_BACKSLASH = 
+    let KEY_DELETE = 
+    let KEY_END = 
+    let KEY_PGDN = 
+    let KEYPAD_SEVEN_HOME = 
+    let KEYPAD_EIGHT_UP_ARROW = 
+    let KEYPAD_NINE_PGUP = 
+    let KEYPAD_PLUS, = 
+
+    builder.new_row();
+
+    let KEY_CAPSLOCK = builder.quick_key_action("Home", 74);
+    let KEY_A = builder.quick_key_alphabetic("a", "a", 4);
+    let KEY_S = builder.quick_key_alphabetic("S", "s", 22);
+    let KEY_D = builder.quick_key_alphabetic("D", "d", 7);
+    let KEY_F = builder.quick_key_alphabetic("F", "f", 9);
+    let KEY_G = builder.quick_key_alphabetic("G", "g", 10);
+    let KEY_H = builder.quick_key_alphabetic("H", "h", 11);
+    let KEY_J = builder.quick_key_alphabetic("J", "j", 13);
+    let KEY_K = builder.quick_key_alphabetic("K", "k", 14);
+    let KEY_L = builder.quick_key_alphabetic("L", "l", 15);
+    let KEY_COLON_SEMICOLON = 
+    let KEY_DOUBLE_QUOTE_SINGLE_QUOTE = 
+    let KEY_ENTER = builder.quick_key_action("Enter". to_string(), 40);
+    let KEYPAD_FOUR_LEFT_ARROW = 
+    let KEYPAD_FIVE = 
+    let KEYPAD_SIX_RIGHT_ARROW = 
+    let KEY_SHIFT_LEFT = builder.quick_key_action("Shift". to_string(), 225);
+    let KEY_Z = builder.quick_key_alphabetic("Z", "z", 29);
+    let KEY_X = builder.quick_key_alphabetic("X", "x", 27);
+    let KEY_C = builder.quick_key_alphabetic("C", "c", 6);
+    let KEY_V = builder.quick_key_alphabetic("V", "v", 25);
+    let KEY_B = builder.quick_key_alphabetic("B", "b", 5);
+    let KEY_N = builder.quick_key_alphabetic("N", "n", 17);
+    let KEY_M = builder.quick_key_alphabetic("M", "m", 16);
+    let KEY_LEFT_ANGLE_BRACKET_COMMA = 
+    let KEY_RIGHT_ANGLE_BRACKET_PERIOD = 
+    let KEY_QUESTION_FORWARD_SLASH = 
+    let KEY_SHIFT_RIGHT = 
+    let KEY_UP_ARROW = 
+    let KEYPAD_ONE_END = 
+    let KEYPAD_TWO_DOWN_ARROW = 
+    let KEYPAD_THREE_PGDN = 
+    let KEYPAD_ENTER = builder.quick_key_action("Enter", 88);
+    let KEY_CTRL_LEFT = 
+    let KEY_SUPER_LEFT = 
+    let KEY_ALT_LEFT = 
+    let KEY_SPACE = 
+    let KEY_ALT_RIGHT = 
+    let KEY_SUPER_RIGHT = 
+    let KEY_MENU = builder.quick_key_action("Menu", 118);
+    let KEY_CTRL_RIGHT = 
+    builder.position.x += 1.;
+    let KEY_LEFT_ARROW = builder.quick_key_action("←", 80);
+    let KEY_DOWN_ARROW = builder.quick_key_action("↓", 81);
+    let KEY_RIGHT_ARROW = builder.quick_key_action("→", 79);
+    builder.position.x += 1.;
+    let KEYPAD_ZERO_INS = builder.quick_key_numpad_digit_action("0", "Ins", 98);
+    let KEYPAD_PERIOD_DEL = builder.quick_key_numpad_digit_action(".", "Del", 99);
 
     let default_ansi_104_keys: Vec<Key> = 
     vec![
@@ -450,10 +460,10 @@ const DEFAULT_ANSI_104_PHYSICAL_LAYOUT: PhysicalLayout =
     DEFAULT_ANSI_104_KEYBOARD.physical_layout;
 
 const DEFAULT_ANSI_104_KEYLIST: KeyList = KeyList{
-    metadata: "Standard ANSI 104 Keyboard".to_owned(),
-    physical_metadata: "Standard ANSI 104 Keyboard Physical Switch Layout Map".to_owned(),
-    firmware_metadata: "Standard ANSI 104 Keyboard Keycode Layout Map".to_owned(),
-    character_metadata: "Standard ANSI 104 Keyboard Character Layout Map".to_owned(),
+    metadata: "Standard ANSI 104 Keyboard". to_string(),
+    physical_metadata: "Standard ANSI 104 Keyboard Physical Switch Layout Map". to_string(),
+    firmware_metadata: "Standard ANSI 104 Keyboard Keycode Layout Map". to_string(),
+    key_output_metadata: "Standard ANSI 104 Keyboard Character Layout Map". to_string(),
     keylist: DEFAULT_ANSI_104_KEYS,
 };
 

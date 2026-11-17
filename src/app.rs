@@ -1,4 +1,4 @@
-use crate::KeyboardLayout;
+use crate::{KeyboardLayout, make_default_ansi_104_keyboard};
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -17,7 +17,7 @@ impl Default for TemplateApp {
         Self {
             // Example stuff:
             label: "Hello World!".to_owned(),
-            keyboardlayout: 
+            keyboardlayout: make_default_ansi_104_keyboard(),
             temp_value: 2.7,
         }
     }
@@ -78,9 +78,9 @@ impl eframe::App for TemplateApp {
                 ui.text_edit_singleline(&mut self.label);
             });
 
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
+            ui.add(egui::Slider::new(&mut self.temp_value, 0.0..=10.0).text("value"));
             if ui.button("Increment").clicked() {
-                self.value += 1.0;
+                self.temp_value += 1.0;
             }
 
             ui.separator();

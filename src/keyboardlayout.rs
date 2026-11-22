@@ -77,9 +77,7 @@ pub struct KeyList {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct KeyboardKeyBuilder {
     switch_counter: u16,
-    position: Point,
-    key_width: f32,
-    key_height: f32,
+    key_rect: Rect,
 }
 
 impl KeyboardKeyBuilder {
@@ -88,14 +86,35 @@ impl KeyboardKeyBuilder {
     }
 
     pub fn quick_key_symbolic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
-        todo!()
+        //Construct key items 
+        let text_output_one = TextOutput::simple_text_output(text, false, true);
+        let text_output_two = TextOutput::simple_text_output(text_two, true, true);
+        let keycode = HIDKeycode::make_keyboard_code(keycode_id);
+
+        //Make key
+        let key = Key::quick_key(
+            text_output_one,
+            Some(text_output_two),
+            self.key_rect.clone(),
+            None,
+            self.switch_counter, 
+            keycode,
+            0,
+        );
+
+        //Move builder
+        self.move_next();
+
+        //Return Key
+        return key;
+
     }
 
     pub fn quick_key_alphabetic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
         todo!()
     }
 
-    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier: Modifier, keycode_id: u16) -> Key {
+    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier: ModifierMask, keycode_id: u16) -> Key {
         todo!()
     }    
 
@@ -112,21 +131,59 @@ impl KeyboardKeyBuilder {
     }
 
     pub fn set_width(&mut self, width: f32){
-        self.key_width = width;
+        self.key_rect.width = width;
     }
 
     pub fn set_height(&mut self, height: f32){
-        self.key_height = height;
+        self.key_rect.height = height;
     }
 
     pub fn new_row(&mut self){
-        self.position.x = 0.;
-        self.position.y += self.key_height;
+        self.set_x(0.);
+        self.push_y(self.height());
     }
 
     pub fn insert_space(&mut self, width: f32){
-        self.position.x += width;
+        self.push_x(width);
     }
+
+    fn move_next(&mut self){
+        self.push_x(self.width());
+    }
+
+    fn position(&self) -> Point {
+        self.key_rect.get_top_left()
+    }
+
+    fn set_position(&mut self, point: Point){
+        self.key_rect.x = point.x;
+        self.key_rect.y = point.y;
+    }
+
+    fn push_x(&mut self, value: f32){
+        self.key_rect.x += value;
+    }
+
+    fn push_y(&mut self, value: f32){
+        self.key_rect.y += value;
+    }
+
+    fn width(&self) -> f32 {
+        self.key_rect.width
+    }
+
+    fn height(&self) -> f32 {
+        self.key_rect.height
+    }
+
+    fn set_x(&mut self, value: f32){
+        self.key_rect.x = value;
+    }
+
+    fn set_y(&mut self, value: f32){
+        self.key_rect.y = value;
+    }
+
 
 }
 
@@ -138,10 +195,10 @@ pub struct Key {
 }
 
 impl Key {
-    fn quick_key(text_one: TextOutput, text_two: Option<TextOutput>, rect: Rect, rect_two: Option<Rect>, switch_id: u16, keycode: HIDKeycode, layer: u8) -> Self {
+    fn quick_key(text_output_one: TextOutput, text_output_two: Option<TextOutput>, rect: Rect, rect_two: Option<Rect>, switch_id: u16, keycode: HIDKeycode, layer: u8) -> Self {
 
-        let mut text_output = vec![text_one];
-        if let Some(text_two) = text_two {
+        let mut text_output = vec![text_output_one];
+        if let Some(text_two) = text_output_two {
             text_output.push(text_two);
         }
         
@@ -197,12 +254,12 @@ impl Default for SwitchMap {
 pub struct Rect {
     pub x: f32, 
     pub y: f32, 
-    pub w: f32, 
-    pub h: f32, 
+    pub width: f32, 
+    pub height: f32, 
 }
 
 impl Rect {
-    fn within_rect(&self, point: Point) -> bool {
+    pub fn within_rect(&self, point: Point) -> bool {
         point.x > self.x && 
         point.x < self.x2() &&
         point.y > self.y &&
@@ -210,12 +267,33 @@ impl Rect {
     }
 
     fn x2(&self) -> f32{
-        self.x + self.w
+        self.x + self.width
     }
 
     fn y2(&self) -> f32{
-        self.y + self.h
+        self.y + self.height
     }
+
+    pub fn get_top_left(&self) -> Point{
+        Point { x: self.x, y: self.y }
+    }
+
+    pub fn get_top_right(&self) -> Point{
+        Point { x: self.x2(), y: self.y }
+    }
+
+    pub fn get_bottom_left(&self) -> Point{
+        Point { x: self.x, y: self.y2() }
+    }
+
+    pub fn get_bottom_right(&self) -> Point{
+        Point { x: self.x2(), y: self.y2() }
+    }
+
+    pub fn get_center(&self) -> Point{
+        Point { x: self.x + (self.width / 2.) , y: self.y + (self.height / 2.)}
+    }
+
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
@@ -240,7 +318,7 @@ pub struct KeyOutputMap {
 pub enum KeyOutput {
     TextOutputs (Vec<TextOutput>),
     Modifier{
-        modifier: Modifier,
+        modifier: ModifierMask,
         labels: Vec<LabelAttributes>,
     },
     Action(LabelAttributes),
@@ -254,15 +332,65 @@ impl Default for KeyOutput {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TextOutput {
     pub output_text: String,
-    pub modifiers: ModifierComposition,
+    pub modifiers: ModifierMask,
     pub label: LabelAttributes,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Modifier(u8);
+impl TextOutput{
+    fn simple_text_output(text: impl Into<String>, is_shifted: bool, label_visible: bool) -> TextOutput{
+        let output_text = text.into();
+        let (modifiers, label_position) = 
+            if is_shifted {
+                (ModifierMask::shift(), LabelPosition::TopLeft)
+            } 
+            else {
+                (ModifierMask::base(), LabelPosition::FrontLeft)
+            };
+
+        let label_text = output_text.clone();
+        let label = LabelAttributes::default().with_label(label_text).with_visiblity(label_visible).with_position(label_position);
+
+        TextOutput { 
+            output_text, 
+            modifiers, 
+            label, 
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ModifierComposition (Vec<Modifier>);
+pub struct ModifierMask(u8);
+
+impl ModifierMask {
+    const fn base() -> Self{
+        return Self(0b0000_0000);
+    }
+    const fn shift() -> Self{
+        return Self(0b0000_0001);
+    }
+    const fn alt_gr() -> Self{
+        return Self(0b0000_0010);
+    }
+    const fn shift_alt_gr() -> Self{
+        return Self(0b0000_0011);
+    }
+}
+
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ModifierNameIndex([String;8]);
+
+impl ModifierNameIndex {
+    fn get_index(&self, modifier: impl Into<String>) -> Option<u8>{
+        let requested_modifier = modifier.into();
+        self.0
+            .iter()// iterate out the array
+            .position(|modifier| modifier.eq(&requested_modifier))// Find modifier if it exists
+            .map(|index| index as u8) // Get modifier index
+    }
+    // fn default
+}
+
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LabelAttributes {
@@ -280,12 +408,24 @@ impl LabelAttributes {
     fn with_position(self, position: LabelPosition) -> Self {
         LabelAttributes { position, ..self }
     }
+    fn with_visiblity(self, visible: bool) -> Self {
+        LabelAttributes { visible, ..self }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct HIDKeycode {
     pub page: u16,
     pub id: u16,
+}
+
+impl HIDKeycode {
+    fn make_keyboard_code(id: u16) -> Self{
+        HIDKeycode {
+            page: 0x07,
+            id
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

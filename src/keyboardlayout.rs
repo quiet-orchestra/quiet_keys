@@ -85,21 +85,18 @@ impl KeyboardKeyBuilder {
         KeyboardKeyBuilder::default()
     }
 
-    pub fn quick_key_symbolic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
-        //Construct key items 
-        let text_output_one = TextOutput::simple_text_output(text, false, true);
-        let text_output_two = TextOutput::simple_text_output(text_two, true, true);
+    //Generic fn all quick keys must use
+    fn quick_key(&mut self, key_output: KeyOutput, keycode_id: u16) -> Key {
+        //Construct rect and HIDKeycode
+        let rect = self.key_rect.clone();
         let keycode = HIDKeycode::make_keyboard_code(keycode_id);
 
         //Make key
         let key = Key::quick_key(
-            text_output_one,
-            Some(text_output_two),
-            self.key_rect.clone(),
-            None,
-            self.switch_counter, 
+            key_output,
+            rect,
+            self.switch_counter,
             keycode,
-            0,
         );
 
         //Move builder
@@ -107,19 +104,61 @@ impl KeyboardKeyBuilder {
 
         //Return Key
         return key;
+    }
 
+    fn key_with_dimensions(&mut self, key_output: KeyOutput, keycode_id: u16, width: f32, height: f32) -> Key {
+        //retain dimensions
+        let prev_width = self.width();
+        let prev_height = self.height();
+        //adjust dimensions
+        self.set_width(width);
+        self.set_height(height);
+        //construct key
+        let key = self.quick_key(key_output, keycode_id);
+        //Revert dimensions
+        self.set_width(prev_width);
+        self.set_height(prev_height);
+
+        return key;
+    }
+
+    //Used for making aphabetic and symbolic keys with two text outputs
+    fn two_text_key(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16, alphabetic: bool) -> Key {
+        //Construct key items 
+        let text_output_one = TextOutput::simple_text_output(text, false, !alphabetic);// If alphabetic don't show the lower label
+        let text_output_two = TextOutput::simple_text_output(text_two, true, true);
+        let key_output = KeyOutput::TextOutputs(vec![text_output_one, text_output_two]);     
+
+        self.quick_key(key_output,keycode_id)
+    }
+
+    pub fn quick_key_symbolic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
+        self.two_text_key(text, text_two, keycode_id, false)
     }
 
     pub fn quick_key_alphabetic(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16) -> Key {
-        todo!()
+        self.two_text_key(text, text_two, keycode_id, true)
     }
 
-    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier: ModifierMask, keycode_id: u16) -> Key {
-        todo!()
+
+    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier: ModifierMask, keycode_id: u16, width: f32) -> Key {
+
+        //Construct label and then modifier
+        let key_label = LabelAttributes::default().with_label(label.into()).with_position(LabelPosition::MiddleLeft);
+        let key_output = KeyOutput::Modifier { modifier, labels: vec![key_label]};
+
+        self.key_with_dimensions(key_output, keycode_id, width, self.height())
+ 
     }    
 
-    pub fn quick_key_action(&mut self, label: impl Into<String>, keycode_id: u16) -> Key {
-        todo!()
+    pub fn quick_key_action(&mut self, label: impl Into<String>, label_position: LabelPosition, keycode_id: u16, width: f32) -> Key {
+
+        //Construct label and then modifier
+        let key_label = LabelAttributes::default().with_label(label.into()).with_position(label_position);
+        let key_output = KeyOutput::Action(key_label);
+
+        self.key_with_dimensions(key_output, keycode_id, width, self.height())
+
     }   
 
     pub fn quick_key_numpad_and_action(&mut self, text: impl Into<String>, label: impl Into<String>, keycode_id: u16) -> Key {
@@ -195,32 +234,24 @@ pub struct Key {
 }
 
 impl Key {
-    fn quick_key(text_output_one: TextOutput, text_output_two: Option<TextOutput>, rect: Rect, rect_two: Option<Rect>, switch_id: u16, keycode: HIDKeycode, layer: u8) -> Self {
-
-        let mut text_output = vec![text_output_one];
-        if let Some(text_two) = text_output_two {
-            text_output.push(text_two);
-        }
-        
+    fn quick_key(key_output: KeyOutput , rect: Rect, switch_id: u16, keycode: HIDKeycode) -> Self {        
         Key { 
             switch_map: SwitchMap { 
                 metadata: "". to_string(), 
                 switch_id, 
                 rect, 
-                secondary_rect: rect_two,
+                secondary_rect: None,
                 angle: Turns(0.), 
                 homing_nub: false,
             }, 
             hid_keycode_maps: vec![HIDKeycodeMap { 
                 switch_id, 
-                layer,
+                layer: 0,
                 keycode,
             }], 
             key_output_maps: vec![KeyOutputMap { 
                 keycode, 
-                key_output:  KeyOutput::TextOutputs(
-                    text_output
-                ),
+                key_output,
             }], 
         }
     }
@@ -292,6 +323,18 @@ impl Rect {
 
     pub fn get_center(&self) -> Point{
         Point { x: self.x + (self.width / 2.) , y: self.y + (self.height / 2.)}
+    }
+
+    pub fn scale_from_center(self, width_scale: f32, height_scale: f32) -> Self {
+        let center = self.get_center();
+        let Rect { x: _, y: _, width, height } = self;
+
+        let width = width * width_scale;
+        let height = height * height_scale;
+
+        let x = center.x - (width / 2.);
+        let y: f32 = center.y - (height / 2.);
+        return Rect { x, y, width, height };
     }
 
 }

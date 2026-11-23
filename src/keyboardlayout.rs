@@ -16,6 +16,7 @@ pub struct KeyboardLayout {
 
 impl KeyboardLayout {
     pub fn from_keylist(keylist: KeyList) -> Self {
+        let modifier_list = keylist.modifier_list;
 
         let (mut switch_maps , mut  hid_keycode_maps, mut  key_output_maps ) = (Vec::new(), Vec::new(), Vec::new());
         for key in keylist.keylist {
@@ -35,6 +36,7 @@ impl KeyboardLayout {
             KeyOutputLayout {
                 metadata: keylist.key_output_metadata,
                 key_output_maps,
+                modifier_list,
             },
         );
 
@@ -63,6 +65,7 @@ pub struct FirmwareLayout {
 pub struct KeyOutputLayout {
     pub metadata: String,
     pub key_output_maps: Vec<KeyOutputMap>,
+    pub modifier_list: ModifierList,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -71,18 +74,31 @@ pub struct KeyList {
     pub physical_metadata: String,
     pub firmware_metadata: String,
     pub key_output_metadata: String,
-    pub keylist: Vec<Key>
+    pub keylist: Vec<Key>,
+    pub modifier_list: ModifierList,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct KeyboardKeyBuilder {
     switch_counter: u16,
     key_rect: Rect,
+    one_label_position: LabelPosition,
+    two_labels_position: [LabelPosition; 2],
+    horizontal_offset: f32,
+    modifier_list: ModifierList,
 }
 
 impl KeyboardKeyBuilder {
     pub fn new() -> Self{
-        KeyboardKeyBuilder::default()
+        let mut keyboard_builder = KeyboardKeyBuilder::default();
+
+        keyboard_builder.one_label_position = LabelPosition::MiddleLeft;
+        keyboard_builder.two_labels_position = [LabelPosition::BottomLeft, LabelPosition::TopLeft];
+
+        keyboard_builder.set_height(1.);
+        keyboard_builder.set_width(1.);
+
+        keyboard_builder
     }
 
     //Generic fn all quick keys must use
@@ -106,7 +122,10 @@ impl KeyboardKeyBuilder {
         return key;
     }
 
-    fn key_with_dimensions(&mut self, key_output: KeyOutput, keycode_id: u16, width: f32, height: f32) -> Key {
+    fn key_with_dimensions<KeyFunction>(&mut self, key_function: KeyFunction, width: f32, height: f32) -> Key
+    where 
+        KeyFunction: FnOnce(&mut Self) -> Key,
+    {
         //retain dimensions
         let prev_width = self.width();
         let prev_height = self.height();
@@ -114,7 +133,7 @@ impl KeyboardKeyBuilder {
         self.set_width(width);
         self.set_height(height);
         //construct key
-        let key = self.quick_key(key_output, keycode_id);
+        let key = key_function(self);
         //Revert dimensions
         self.set_width(prev_width);
         self.set_height(prev_height);
@@ -125,9 +144,9 @@ impl KeyboardKeyBuilder {
     //Used for making aphabetic and symbolic keys with two text outputs
     fn two_text_key(&mut self, text: impl Into<String>, text_two: impl Into<String>, keycode_id: u16, alphabetic: bool) -> Key {
         //Construct key items 
-        let text_output_one = TextOutput::simple_text_output(text, false, !alphabetic);// If alphabetic don't show the lower label
-        let text_output_two = TextOutput::simple_text_output(text_two, true, true);
-        let key_output = KeyOutput::TextOutputs(vec![text_output_one, text_output_two]);     
+        let text_output_one = TextOutput::simple_text_output(text, false, !alphabetic, self.two_labels_position[0]);// If alphabetic don't show the lower label
+        let text_output_two = TextOutput::simple_text_output(text_two, true, true, self.two_labels_position[1]);
+        let key_output = KeyOutputType::TextOutputs(vec![text_output_one, text_output_two]).to_key_output();     
 
         self.quick_key(key_output,keycode_id)
     }
@@ -140,33 +159,65 @@ impl KeyboardKeyBuilder {
         self.two_text_key(text, text_two, keycode_id, true)
     }
 
-
-    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier: ModifierMask, keycode_id: u16, width: f32) -> Key {
-
+    pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier_index: ModifierIndex, keycode_id: u16) -> Key {
+        let label = label.into();
         //Construct label and then modifier
-        let key_label = LabelAttributes::default().with_label(label.into()).with_position(LabelPosition::MiddleLeft);
-        let key_output = KeyOutput::Modifier { modifier, labels: vec![key_label]};
+        let key_label = LabelAttribute::default().with_label(label.clone()).with_position(LabelPosition::MiddleLeft);
+        let key_output = KeyOutputType::Modifier { modifier_index, labels: vec![key_label]}.to_key_output();
 
-        self.key_with_dimensions(key_output, keycode_id, width, self.height())
+        //Register modifier
+        self.modifier_list.register_modifier_with_index(label, modifier_index);
+
+        self.quick_key(key_output, keycode_id)
  
-    }    
-
-    pub fn quick_key_action(&mut self, label: impl Into<String>, label_position: LabelPosition, keycode_id: u16, width: f32) -> Key {
-
-        //Construct label and then modifier
-        let key_label = LabelAttributes::default().with_label(label.into()).with_position(label_position);
-        let key_output = KeyOutput::Action(key_label);
-
-        self.key_with_dimensions(key_output, keycode_id, width, self.height())
-
-    }   
-
-    pub fn quick_key_numpad_and_action(&mut self, text: impl Into<String>, label: impl Into<String>, keycode_id: u16) -> Key {
-        todo!()
     }
 
-    pub fn quick_key_numpad(&mut self, text: impl Into<String>, keycode_id: u16) -> Key {
-        todo!()
+    pub fn quick_key_modifier_with_width(&mut self, label: impl Into<String>, modifier_index: ModifierIndex, keycode_id: u16, width: f32) -> Key {
+        self.key_with_dimensions(|builder|builder.quick_key_modifier(label, modifier_index, keycode_id), width, self.height())
+    }
+
+    pub fn quick_key_action(&mut self, label: impl Into<String>, keycode_id: u16) -> Key {
+        //Construct label and then modifier
+        let key_label = LabelAttribute::default().with_label(label.into()).with_position(self.one_label_position);
+        let key_output = KeyOutputType::Action(key_label).to_key_output();
+
+        self.quick_key(key_output, keycode_id)
+
+    }
+
+    pub fn quick_key_action_with_width(&mut self, label: impl Into<String>, keycode_id: u16, width: f32) -> Key {
+        self.key_with_dimensions(|builder|builder.quick_key_action(label, keycode_id), width, self.height())
+    }
+    pub fn quick_key_action_with_height(&mut self, label: impl Into<String>, keycode_id: u16, height: f32) -> Key {
+        self.key_with_dimensions(|builder|builder.quick_key_action(label, keycode_id), self.width(), height)
+    }
+    pub fn quick_key_action_with_dimension(&mut self, label: impl Into<String>, keycode_id: u16, width: f32, height: f32) -> Key {
+        self.key_with_dimensions(|builder|builder.quick_key_action(label, keycode_id), width, height)
+    }
+
+    pub fn quick_key_numpad_and_action(&mut self, text: impl Into<String>, action_label: impl Into<String>, keycode_id: u16) -> Key {
+        let output_text = text.into();
+        let numpad_label = LabelAttribute::default().with_label(output_text.clone()).with_position(self.two_labels_position[1]);
+        let action_label = LabelAttribute::default().with_label(action_label.into()).with_position(self.two_labels_position[0]);
+
+        let numpad_text_output = KeyOutputType::TextOutputs(vec![TextOutput{ output_text, modifier_mask: ModifierMask::base(), label: numpad_label}]);
+        let numpad_action = KeyOutputType::Action(action_label);
+        
+        let key_output = KeyOutput::Locktype([numpad_text_output, numpad_action]);
+
+        self.quick_key(key_output, keycode_id)
+    }
+
+    pub fn quick_key_single(&mut self, text: impl Into<String>, keycode_id: u16) -> Key {
+        self.single_text_key(text, keycode_id)
+    }
+
+    fn single_text_key(&mut self, text: impl Into<String>, keycode_id: u16) -> Key {
+        //Construct key items 
+        let text_output_one = TextOutput::simple_text_output(text, false, true, self.two_labels_position[1]);
+        let key_output = KeyOutputType::TextOutputs(vec![text_output_one]).to_key_output();     
+
+        self.quick_key(key_output,keycode_id)
     }
 
     pub fn set_width(&mut self, width: f32){
@@ -178,23 +229,33 @@ impl KeyboardKeyBuilder {
     }
 
     pub fn new_row(&mut self){
-        self.set_x(0.);
+        self.set_x(self.horizontal_offset);
         self.push_y(self.height());
+    }
+
+    pub fn reset_with_horizontal_offset(&mut self, offset: f32){
+        self.set_y(0.);
+        self.set_x(offset);
+        self.horizontal_offset = offset;
     }
 
     pub fn insert_space(&mut self, width: f32){
         self.push_x(width);
     }
 
+    pub fn insert_vertical_space(&mut self, height: f32){
+        self.push_y(height);
+    }
+
     fn move_next(&mut self){
         self.push_x(self.width());
     }
 
-    fn position(&self) -> Point {
+    pub fn position(&self) -> Point {
         self.key_rect.get_top_left()
     }
 
-    fn set_position(&mut self, point: Point){
+    pub fn set_position(&mut self, point: Point){
         self.key_rect.x = point.x;
         self.key_rect.y = point.y;
     }
@@ -222,8 +283,6 @@ impl KeyboardKeyBuilder {
     fn set_y(&mut self, value: f32){
         self.key_rect.y = value;
     }
-
-
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -345,98 +404,200 @@ pub struct Point {
     pub y: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct HIDKeycodeMap {
     pub switch_id: u16,
     pub keycode: HIDKeycode,
     pub layer: u8,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyOutputMap {
     pub keycode: HIDKeycode,
     pub key_output: KeyOutput,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum KeyOutput {
+pub enum KeyOutputType {
     TextOutputs (Vec<TextOutput>),
     Modifier{
-        modifier: ModifierMask,
-        labels: Vec<LabelAttributes>,
+        modifier_index: ModifierIndex,
+        labels: Vec<LabelAttribute>,
     },
-    Action(LabelAttributes),
+    Action(LabelAttribute),
 }
-impl Default for KeyOutput {
-    fn default() -> Self {
-        KeyOutput::TextOutputs(vec![TextOutput::default()])
+
+impl KeyOutputType {
+    pub fn to_key_output(self) -> KeyOutput{
+        KeyOutput::Single(self)
     }
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum KeyOutput{
+    Single(KeyOutputType),
+    Locktype([KeyOutputType;2]),
+}
+
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TextOutput {
     pub output_text: String,
-    pub modifiers: ModifierMask,
-    pub label: LabelAttributes,
+    pub modifier_mask: ModifierMask,
+    pub label: LabelAttribute,
 }
 
 impl TextOutput{
-    fn simple_text_output(text: impl Into<String>, is_shifted: bool, label_visible: bool) -> TextOutput{
+    fn simple_text_output(text: impl Into<String>, is_shifted: bool, label_visible: bool, label_position: LabelPosition) -> TextOutput{
         let output_text = text.into();
-        let (modifiers, label_position) = 
+        let modifier_mask= 
             if is_shifted {
-                (ModifierMask::shift(), LabelPosition::TopLeft)
+                ModifierMask::shift()
             } 
             else {
-                (ModifierMask::base(), LabelPosition::FrontLeft)
+                ModifierMask::base()
             };
 
         let label_text = output_text.clone();
-        let label = LabelAttributes::default().with_label(label_text).with_visiblity(label_visible).with_position(label_position);
+        let label = LabelAttribute::default().with_label(label_text).with_visiblity(label_visible).with_position(label_position);
 
         TextOutput { 
             output_text, 
-            modifiers, 
+            modifier_mask, 
             label, 
         }
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+//Modifier Structs
+const MODIFIER_COUNT: usize = 8;
+
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ModifierMask(u8);
 
 impl ModifierMask {
-    const fn base() -> Self{
+    pub const fn base() -> Self{
         return Self(0b0000_0000);
     }
-    const fn shift() -> Self{
+    pub const fn shift() -> Self{
         return Self(0b0000_0001);
     }
-    const fn alt_gr() -> Self{
+    pub const fn alt_gr() -> Self{
         return Self(0b0000_0010);
     }
-    const fn shift_alt_gr() -> Self{
+    pub const fn shift_alt_gr() -> Self{
         return Self(0b0000_0011);
     }
-}
 
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ModifierNameIndex([String;8]);
-
-impl ModifierNameIndex {
-    fn get_index(&self, modifier: impl Into<String>) -> Option<u8>{
-        let requested_modifier = modifier.into();
-        self.0
-            .iter()// iterate out the array
-            .position(|modifier| modifier.eq(&requested_modifier))// Find modifier if it exists
-            .map(|index| index as u8) // Get modifier index
+    pub fn get_indices_from_mask(&self) -> Vec<ModifierIndex>{
+        let mut index_vec = Vec::new();
+        for index in 0..MODIFIER_COUNT {
+            if self.0 >> index & 1 == 1 {
+                index_vec.push(ModifierIndex(index));
+            }
+        }
+        return index_vec;
     }
-    // fn default
+
+}
+
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]//Need to validate the usize as less that MODIFIER_COUNT during deserialization.
+pub struct ModifierIndex(usize);
+impl ModifierIndex {
+    pub fn from_usize(index: usize) -> Option<Self> {
+        if index < MODIFIER_COUNT {
+            Some(ModifierIndex(index))
+        }
+        else{
+            None
+        }
+    }
+    pub fn to_mask(&self) -> ModifierMask{
+        ModifierMask(1u8 << self.0)
+    }
+    pub const fn shift() -> Self{
+        return Self(0);
+    }
+    pub const fn alt_gr() -> Self{
+        return Self(1);
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ModifierList{modifier_list: [Option<String>;MODIFIER_COUNT]}
+
+impl ModifierList {
+
+    pub fn get_index(&self, requested_modifier: &str) -> Option<ModifierIndex>{
+        let modifier_index = None;
+        for index in 0..MODIFIER_COUNT {
+            if let Some(modifier) = &self.modifier_list[index] {
+                if modifier.eq(requested_modifier) {
+                    return Some(ModifierIndex(index));
+                }
+            }
+        }
+        return modifier_index;
+    }
+
+    pub fn get_mask(&self) -> ModifierMask{
+        let mut mask = 0u8;
+        for index in 0..MODIFIER_COUNT {
+            if self.modifier_list[index].is_some() {
+                mask |= 1 << index;
+            }
+        }
+        return ModifierMask(mask);
+    }
+
+    fn get_modifier(&self, index: ModifierIndex) -> Option<String> {
+        return self.modifier_list[index.0].clone();
+    }
+
+    pub fn get_modifiers_and_indices(&self) -> Vec<(String, ModifierIndex)> {
+        let mask = self.get_mask();
+        let indices_vec: Vec<ModifierIndex> = mask.get_indices_from_mask();
+        indices_vec.iter().map(|index| {
+            let modifier = self.get_modifier(*index).expect("Modifier should be guranteed from mask.");//Is verified to be there.
+            (modifier,*index)
+        }).collect()
+    }
+
+    pub fn register_modifier_with_index(&mut self, modifier: impl Into<String>, index: ModifierIndex){
+        self.modifier_list[index.0] = Some(modifier.into());    
+    }
+
+    pub fn register_shift(&mut self){
+        self.register_modifier_with_index("Shift", ModifierIndex::shift());
+    }
+    pub fn register_alt_gr(&mut self){
+        self.register_modifier_with_index("AltGr", ModifierIndex::alt_gr());
+    }
+
+    pub fn register_modifier(&mut self, modifier: impl Into<String>) -> bool{
+        let modifier = modifier.into();
+        if self.get_index(&modifier).is_some(){true}
+        else{
+            if let Some(index) = self.get_first_empty_index() {
+                self.register_modifier_with_index(modifier, index);
+                true
+            }
+            else {false}
+        }
+    }
+
+    fn get_first_empty_index(&self) -> Option<ModifierIndex> {
+        for index in 0..MODIFIER_COUNT{
+            if self.modifier_list[index].is_none() {
+                return Some(ModifierIndex(index));
+            }
+        }
+        return None;
+    }
 }
 
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct LabelAttributes {
+pub struct LabelAttribute {
     pub label: String,
     pub visible: bool,
     pub font: Font,
@@ -444,15 +605,15 @@ pub struct LabelAttributes {
     pub position: LabelPosition,
 }
 
-impl LabelAttributes {
+impl LabelAttribute {
     fn with_label(self, label: String) -> Self {
-        LabelAttributes { label, ..self }
+        LabelAttribute { label, ..self }
     }
     fn with_position(self, position: LabelPosition) -> Self {
-        LabelAttributes { position, ..self }
+        LabelAttribute { position, ..self }
     }
     fn with_visiblity(self, visible: bool) -> Self {
-        LabelAttributes { visible, ..self }
+        LabelAttribute { visible, ..self }
     }
 }
 
@@ -492,7 +653,7 @@ impl Default for Font {
     \|F̲L̲|F̲C̲|F̲R̲|
 
 */
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum LabelPosition {
     TopLeft = 0,
     TopCenter = 1,
@@ -539,7 +700,9 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     let key_f10 = builder.quick_key_action("F10", 67 );
     let key_f11 = builder.quick_key_action("F11", 68 );
     let key_f12 = builder.quick_key_action("F12", 69 );
+
     builder.insert_space(0.25);
+
     let key_prtsc = builder.quick_key_action("PrtSc", 70 );
     let key_scroll_lock = builder.quick_key_action("Scroll\nLock", 71 );
     let key_pause_break = builder.quick_key_action("Pause\n\nBreak", 72 );
@@ -559,24 +722,18 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     let key_zero_right_parenthesis = builder.quick_key_symbolic("0", ")", 39);
     let key_dash_underscore = builder.quick_key_symbolic("-", "_", 45);
     let key_equals_plus = builder.quick_key_symbolic("=", "+", 46);
-    builder.set_width(2.);
-    let key_backspace = builder.quick_key_action("Backspace", 42);
-    builder.set_width(1.);
+    let key_backspace = builder.quick_key_action_with_width("Backspace", 42, 2.);
+
     builder.insert_space(0.25);
+
     let key_insert = builder.quick_key_action("Insert", 73);
     let key_home = builder.quick_key_action("Home", 74);
     let key_pgup = builder.quick_key_action("PgUp", 75);
-    builder.insert_space(0.25);
-    let keypad_num_lock = builder.quick_key_action("Num\nLock", 0x53);
-    let keypad_forward_slash = builder.quick_key_numpad("/", 84);
-    let keypad_star = builder.quick_key_numpad("*", 85);
-    let keypad_dash = builder.quick_key_numpad("-", 86);
+   
 
     builder.new_row();
 
-    builder.set_width(1.5);
-    let key_tab = builder.quick_key_action("Tab", 43);
-    builder.set_width(1.0);
+    let key_tab = builder.quick_key_action_with_width("Tab", 43, 1.5);
     let key_q = builder.quick_key_alphabetic( "q","Q", 20);
     let key_w = builder.quick_key_alphabetic( "w", "W",26);
     let key_e = builder.quick_key_alphabetic( "e", "E",8);
@@ -593,19 +750,10 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     let key_delete = builder.quick_key_action("Delete", 0x4C);
     let key_end = builder.quick_key_action("End", 0x4D);
     let key_pgdn = builder.quick_key_action("PgDn", 0x4E);
-    builder.insert_space(0.25);
-    let keypad_seven_home = builder.quick_key_numpad_and_action("7", "Home", 0x5F);
-    let keypad_eight_up_arrow = builder.quick_key_numpad_and_action("8", "↑", 0x60);
-    let keypad_nine_pgup = builder.quick_key_numpad_and_action("9", "PgUp", 0x61);
-    builder.set_height(2.);
-    let keypad_plus = builder.quick_key_numpad("+", 0x57);
-    builder.set_height(1.);
 
     builder.new_row();
 
-    builder.set_width(1.75);
-    let key_capslock = builder.quick_key_action("CapsLock", 2);
-    builder.set_width(1.);
+    let key_capslock = builder.quick_key_action_with_width("CapsLock", 2, 1.75);
     let key_a = builder.quick_key_alphabetic("a", "A", 4);
     let key_s = builder.quick_key_alphabetic("s", "S", 22);
     let key_d = builder.quick_key_alphabetic("d", "D", 7);
@@ -617,17 +765,11 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     let key_l = builder.quick_key_alphabetic("l", "L", 15);
     let key_semicolon_colon = builder.quick_key_symbolic( ";",":", 0x33);
     let key_single_quote_double_quote = builder.quick_key_symbolic( "\'","\"", 0x34);
-    builder.set_width(1.5);
-    let key_enter = builder.quick_key_action("Enter", 40);
-    builder.set_width(1.);
-    builder.insert_space(3.5);
-    let keypad_four_left_arrow = builder.quick_key_numpad_and_action("4", "←", 0x5C);
-    let keypad_five = builder.quick_key_numpad("5", 0x5D);
-    let keypad_six_right_arrow = builder.quick_key_numpad_and_action("6", "→", 0x5E);
+    let key_enter = builder.quick_key_action_with_width("Enter", 40, 1.5);
 
     builder.new_row();
 
-    let key_shift_left = builder.quick_key_action("Shift", 0xE1);
+    let key_shift_left = builder.quick_key_modifier_with_width("Shift", ModifierIndex::shift(), 0xE1, 2.25);
     let key_z = builder.quick_key_alphabetic("z", "Z", 29);
     let key_x = builder.quick_key_alphabetic("x", "X", 27);
     let key_c = builder.quick_key_alphabetic("c", "C", 6);
@@ -638,18 +780,9 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     let key_comma_left_angle_bracket = builder.quick_key_symbolic( ",","<", 0x36);
     let key_period_right_angle_bracket = builder.quick_key_symbolic( ".",">", 0x37);
     let key_forward_slash_question = builder.quick_key_symbolic( "/","?", 0x38);
-    builder.set_width(2.75);
-    let key_shift_right = builder.quick_key_action("Shift", 0xE5);
-    builder.set_width(1.);
+    let key_shift_right = builder.quick_key_modifier_with_width("Shift", ModifierIndex::shift(), 0xE5, 2.75);
     builder.insert_space(1.25);
     let key_up_arrow = builder.quick_key_action("↑", 0x52);
-    builder.insert_space(1.25);
-    let keypad_one_end = builder.quick_key_numpad_and_action("1", "End", 0x59);
-    let keypad_two_down_arrow = builder.quick_key_numpad_and_action("2", "↓", 0x5A);
-    let keypad_three_pgdn = builder.quick_key_numpad_and_action("3", "PgDn", 0x5B);
-    builder.set_height(2.);
-    let keypad_enter = builder.quick_key_action("Enter", 0x58);
-    builder.set_height(1.);
 
     builder.new_row();
 
@@ -669,9 +802,42 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     let key_left_arrow = builder.quick_key_action("←", 80);
     let key_down_arrow = builder.quick_key_action("↓", 81);
     let key_right_arrow = builder.quick_key_action("→", 79);
-    builder.insert_space(0.25);
+
+
+    //keypad
+    builder.reset_with_horizontal_offset(18.5);
+    let keypad_num_lock = builder.quick_key_action("Num\nLock", 0x53);
+    let keypad_forward_slash = builder.quick_key_single("/", 84);
+    let keypad_star = builder.quick_key_single("*", 85);
+    let keypad_dash = builder.quick_key_single("-", 86);
+
+    builder.new_row();
+
+    let keypad_seven_home = builder.quick_key_numpad_and_action("7", "Home", 0x5F);
+    let keypad_eight_up_arrow = builder.quick_key_numpad_and_action("8", "↑", 0x60);
+    let keypad_nine_pgup = builder.quick_key_numpad_and_action("9", "PgUp", 0x61);
+    builder.set_height(2.);
+    let keypad_plus = builder.quick_key_single("+", 0x57);
+    builder.set_height(1.);
+
+    builder.new_row();
+
+    let keypad_four_left_arrow = builder.quick_key_numpad_and_action("4", "←", 0x5C);
+    let keypad_five = builder.quick_key_single("5", 0x5D);
+    let keypad_six_right_arrow = builder.quick_key_numpad_and_action("6", "→", 0x5E);
+
+    builder.new_row();
+
+    let keypad_one_end = builder.quick_key_numpad_and_action("1", "End", 0x59);
+    let keypad_two_down_arrow = builder.quick_key_numpad_and_action("2", "↓", 0x5A);
+    let keypad_three_pgdn = builder.quick_key_numpad_and_action("3", "PgDn", 0x5B);
+    let keypad_enter = builder.quick_key_action_with_height("Enter", 0x58, 2.);
+
+    builder.new_row();
+    
     let keypad_zero_ins = builder.quick_key_numpad_and_action("0", "Ins", 98);
     let keypad_period_del = builder.quick_key_numpad_and_action(".", "Del", 99);
+
 
     let default_ansi_104_keys: Vec<Key> = 
     vec![
@@ -689,7 +855,18 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
         firmware_metadata: "Standard ANSI 104 Keyboard Keycode Layout Map". to_string(),
         key_output_metadata: "Standard ANSI 104 Keyboard Character Layout Map". to_string(),
         keylist: default_ansi_104_keys,
+        modifier_list: builder.modifier_list,
     };
 
     KeyboardLayout::from_keylist(default_ansi_104_keylist)
+}
+
+#[test]
+fn print_default_ansi_104_keyboard_json() {
+    let keyboard = make_default_ansi_104_keyboard();
+    let json = serde_json::to_string_pretty(&keyboard)
+        .expect("failed to serialize keyboard");
+
+    std::fs::write("keyboard.json", json)
+        .expect("failed to write keyboard.json");
 }

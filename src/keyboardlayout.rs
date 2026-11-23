@@ -753,7 +753,7 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
 
     builder.new_row();
 
-    let key_capslock = builder.quick_key_action_with_width("CapsLock", 2, 1.75);
+    let key_capslock = builder.quick_key_action_with_width("CapsLock", 0x39, 1.75);
     let key_a = builder.quick_key_alphabetic("a", "A", 4);
     let key_s = builder.quick_key_alphabetic("s", "S", 22);
     let key_d = builder.quick_key_alphabetic("d", "D", 7);

@@ -2,7 +2,10 @@
 //Created by Quiet Orchestra
 //Licensed under MPL-2.0
 
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::ser::SerializeMap;
 
 use crate::{Angle::{self, Turns}};
 
@@ -117,6 +120,7 @@ impl KeyboardKeyBuilder {
 
         //Move builder
         self.move_next();
+        self.switch_counter += 1;
 
         //Return Key
         return key;
@@ -522,7 +526,7 @@ impl ModifierIndex {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default)]
 pub struct ModifierList{modifier_list: [Option<String>;MODIFIER_COUNT]}
 
 impl ModifierList {
@@ -540,7 +544,7 @@ impl ModifierList {
     }
 
     pub fn get_mask(&self) -> ModifierMask{
-        let mut mask = 0u8;
+        let ModifierMask(mut mask) = ModifierMask::base();
         for index in 0..MODIFIER_COUNT {
             if self.modifier_list[index].is_some() {
                 mask |= 1 << index;
@@ -592,6 +596,35 @@ impl ModifierList {
             }
         }
         return None;
+    }
+}
+
+impl Serialize for ModifierList {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let modifier_list =  self.get_modifiers_and_indices();
+        let mut map = serializer.serialize_map(Some(modifier_list.len()))?;
+        for (modifier, index) in modifier_list {
+            map.serialize_entry(&index.0, &modifier)?;
+        } 
+        map.end()
+    }
+}
+impl<'de> Deserialize<'de> for ModifierList {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut modifier_list = [const { None };MODIFIER_COUNT];
+        let map: HashMap<usize,String> = HashMap::deserialize(deserializer)?;
+        for (index, modifier) in map{
+            if index < MODIFIER_COUNT {
+                modifier_list[index] = Some(modifier);
+            }
+        }
+        Ok(ModifierList{modifier_list})
     }
 }
 
@@ -862,11 +895,23 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
 }
 
 #[test]
-fn print_default_ansi_104_keyboard_json() {
+fn print_default_ansi_104_keyboard_json() {//AI generated
     let keyboard = make_default_ansi_104_keyboard();
     let json = serde_json::to_string_pretty(&keyboard)
         .expect("failed to serialize keyboard");
 
     std::fs::write("keyboard.json", json)
         .expect("failed to write keyboard.json");
+}
+#[test]
+fn deserializes_sparse_modifier_list() {//AI generated
+    let json = r#"{"0":"Shift","3":"AltGr"}"#;
+
+    let list: ModifierList =
+        serde_json::from_str(json).expect("failed to deserialize modifier list");
+
+    assert_eq!(list.modifier_list[0].as_deref(), Some("Shift"));
+    assert_eq!(list.modifier_list[1], None);
+    assert_eq!(list.modifier_list[2], None);
+    assert_eq!(list.modifier_list[3].as_deref(), Some("AltGr"));
 }

@@ -3,14 +3,17 @@
 //Licensed under MPL-2.0
 
 use std::collections::HashMap;
-
+use num_traits::{One, Zero};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::ser::SerializeMap;
+use serde::de::Error;
 
 use crate::{Angle::{self, Turns}};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct KeyboardLayout {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub metadata: String,
     pub physical_layout: PhysicalLayout,
     pub firmware_layout: FirmwareLayout,
@@ -53,19 +56,25 @@ impl KeyboardLayout {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PhysicalLayout {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub metadata: String,
     pub switch_maps: Vec<SwitchMap>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FirmwareLayout {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub metadata: String,
     pub hid_keycode_maps: Vec<HIDKeycodeMap>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct KeyOutputLayout {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub metadata: String,
     pub key_output_maps: Vec<KeyOutputMap>,
     pub modifier_list: ModifierList,
@@ -81,7 +90,7 @@ pub struct KeyList {
     pub modifier_list: ModifierList,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default)]
 pub struct KeyboardKeyBuilder {
     switch_counter: u16,
     key_rect: Rect,
@@ -150,7 +159,7 @@ impl KeyboardKeyBuilder {
         //Construct key items 
         let text_output_one = TextOutput::simple_text_output(text, false, !alphabetic, self.two_labels_position[0]);// If alphabetic don't show the lower label
         let text_output_two = TextOutput::simple_text_output(text_two, true, true, self.two_labels_position[1]);
-        let key_output = KeyOutputType::TextOutputs(vec![text_output_one, text_output_two]).to_key_output();     
+        let key_output = KeyOutputType::TextOutputKey(vec![text_output_one, text_output_two]).to_key_output();     
 
         self.quick_key(key_output,keycode_id)
     }
@@ -166,8 +175,8 @@ impl KeyboardKeyBuilder {
     pub fn quick_key_modifier(&mut self, label: impl Into<String>, modifier_index: ModifierIndex, keycode_id: u16) -> Key {
         let label = label.into();
         //Construct label and then modifier
-        let key_label = LabelAttribute::default().with_label(label.clone()).with_position(LabelPosition::MiddleLeft);
-        let key_output = KeyOutputType::Modifier { modifier_index, labels: vec![key_label]}.to_key_output();
+        let key_label = Label::default().with_label(label.clone()).with_position(LabelPosition::MiddleLeft);
+        let key_output = KeyOutputType::ModifierKey { modifier_index, labels: vec![key_label]}.to_key_output();
 
         //Register modifier
         self.modifier_list.register_modifier_with_index(label, modifier_index);
@@ -182,8 +191,8 @@ impl KeyboardKeyBuilder {
 
     pub fn quick_key_action(&mut self, label: impl Into<String>, keycode_id: u16) -> Key {
         //Construct label and then modifier
-        let key_label = LabelAttribute::default().with_label(label.into()).with_position(self.one_label_position);
-        let key_output = KeyOutputType::Action(key_label).to_key_output();
+        let key_label = Label::default().with_label(label.into()).with_position(self.one_label_position);
+        let key_output = KeyOutputType::ActionKey(key_label).to_key_output();
 
         self.quick_key(key_output, keycode_id)
 
@@ -201,11 +210,11 @@ impl KeyboardKeyBuilder {
 
     pub fn quick_key_numpad_and_action(&mut self, text: impl Into<String>, action_label: impl Into<String>, keycode_id: u16) -> Key {
         let output_text = text.into();
-        let numpad_label = LabelAttribute::default().with_label(output_text.clone()).with_position(self.two_labels_position[1]);
-        let action_label = LabelAttribute::default().with_label(action_label.into()).with_position(self.two_labels_position[0]);
+        let numpad_label = Label::default().with_position(self.two_labels_position[1]);
+        let action_label = Label::default().with_label(action_label.into()).with_position(self.two_labels_position[0]);
 
-        let numpad_text_output = KeyOutputType::TextOutputs(vec![TextOutput{ output_text, modifier_mask: ModifierMask::base(), label: numpad_label}]);
-        let numpad_action = KeyOutputType::Action(action_label);
+        let numpad_text_output = KeyOutputType::TextOutputKey(vec![TextOutput{ output_text, modifier_mask: ModifierMask::base(), label: numpad_label}]);
+        let numpad_action = KeyOutputType::ActionKey(action_label);
         
         let key_output = KeyOutput::Locktype([numpad_text_output, numpad_action]);
 
@@ -219,7 +228,7 @@ impl KeyboardKeyBuilder {
     fn single_text_key(&mut self, text: impl Into<String>, keycode_id: u16) -> Key {
         //Construct key items 
         let text_output_one = TextOutput::simple_text_output(text, false, true, self.two_labels_position[1]);
-        let key_output = KeyOutputType::TextOutputs(vec![text_output_one]).to_key_output();     
+        let key_output = KeyOutputType::TextOutputKey(vec![text_output_one]).to_key_output();     
 
         self.quick_key(key_output,keycode_id)
     }
@@ -321,14 +330,28 @@ impl Key {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SwitchMap {
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub metadata: String, //Where you put things like switch type at least for now
     pub switch_id: u16,
+
     pub rect: Rect,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub secondary_rect: Option<Rect>,
+    #[serde(skip_serializing_if = "angle_is_zero")]
     pub angle: Angle<f32>,
+    #[serde(skip_serializing_if = "is_false")]
     pub homing_nub: bool,
     // Possibly more to add
+}
+
+fn is_false(boolean: &bool) -> bool {
+    !boolean
+}
+
+fn angle_is_zero(angle: &Angle<f32>) -> bool {
+    angle.in_turns() == 0.
 }
 
 impl Default for SwitchMap {
@@ -344,12 +367,21 @@ impl Default for SwitchMap {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Rect {
-    pub x: f32, 
-    pub y: f32, 
-    pub width: f32, 
-    pub height: f32, 
+    pub x: f32,
+    pub y: f32,
+    #[serde(skip_serializing_if = "is_one")]
+    pub width: f32,
+    #[serde(skip_serializing_if = "is_one")]
+    pub height: f32,
+}
+
+impl Default for Rect {
+    fn default() -> Self {
+        Rect {x: 0., y: 0., width: 1., height: 1.}
+    }
 }
 
 impl Rect {
@@ -409,10 +441,46 @@ pub struct Point {
 }
 
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HIDKeycodeMap {
     pub switch_id: u16,
     pub keycode: HIDKeycode,
+    #[serde(skip_serializing_if = "is_zero")]
     pub layer: u8,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HIDKeycode {
+    #[serde(
+        default = "default_keyboard_page",
+        skip_serializing_if = "is_keyboard_page"
+    )]
+    pub page: u16,
+    pub id: u16,
+}
+
+fn default_keyboard_page() -> u16 {
+    0x07
+}
+
+impl Default for HIDKeycode {
+    fn default() -> Self {
+        HIDKeycode { page: 0x07, id: 0x00/*Is an error*/ }
+    }
+}
+
+fn is_keyboard_page(value: &u16) -> bool {
+    *value == 0x07
+}
+
+impl HIDKeycode {
+    fn make_keyboard_code(id: u16) -> Self{
+        HIDKeycode {
+            page: 0x07,
+            id
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -422,12 +490,12 @@ pub struct KeyOutputMap {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KeyOutputType {
-    TextOutputs (Vec<TextOutput>),
-    Modifier{
+    TextOutputKey (Vec<TextOutput>),
+    ModifierKey{
         modifier_index: ModifierIndex,
-        labels: Vec<LabelAttribute>,
+        labels: Vec<Label>,
     },
-    Action(LabelAttribute),
+    ActionKey(Label),
 }
 
 impl KeyOutputType {
@@ -444,10 +512,16 @@ pub enum KeyOutput{
 
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TextOutput {
     pub output_text: String,
+    #[serde(skip_serializing_if = "is_base_modifier_mask")]
     pub modifier_mask: ModifierMask,
-    pub label: LabelAttribute,
+    pub label: Label,
+}
+
+fn is_base_modifier_mask(mask: &ModifierMask) -> bool {
+    mask.0 == 0
 }
 
 impl TextOutput{
@@ -461,8 +535,8 @@ impl TextOutput{
                 ModifierMask::base()
             };
 
-        let label_text = output_text.clone();
-        let label = LabelAttribute::default().with_label(label_text).with_visiblity(label_visible).with_position(label_position);
+
+        let label = Label::default().with_visiblity(label_visible).with_position(label_position);
 
         TextOutput { 
             output_text, 
@@ -623,60 +697,63 @@ impl<'de> Deserialize<'de> for ModifierList {
             if index < MODIFIER_COUNT {
                 modifier_list[index] = Some(modifier);
             }
+            else{
+                return Err(D::Error::custom(format!(
+                    "Given modifier index {index} is out of range; valid indices are between 0 and {}",
+                    MODIFIER_COUNT - 1
+                )));
+            }
         }
         Ok(ModifierList{modifier_list})
     }
 }
 
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct LabelAttribute {
-    pub label: String,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Label {
+    #[serde(skip_serializing_if = "is_default")]
+    pub custom_text: Option<String>,
+    #[serde(skip_serializing_if = "is_true")]
     pub visible: bool,
+    #[serde(skip_serializing_if = "is_default")]
     pub font: Font,
+    #[serde(skip_serializing_if = "is_default_font_size")]
     pub font_size: f32,
     pub position: LabelPosition,
 }
 
-impl LabelAttribute {
+fn is_true(boolean: &bool) -> bool {
+    *boolean
+}
+
+impl Label {
     fn with_label(self, label: String) -> Self {
-        LabelAttribute { label, ..self }
+        Label { custom_text: Some(label), ..self }
     }
     fn with_position(self, position: LabelPosition) -> Self {
-        LabelAttribute { position, ..self }
+        Label { position, ..self }
     }
     fn with_visiblity(self, visible: bool) -> Self {
-        LabelAttribute { visible, ..self }
+        Label { visible, ..self }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
-pub struct HIDKeycode {
-    pub page: u16,
-    pub id: u16,
-}
-
-impl HIDKeycode {
-    fn make_keyboard_code(id: u16) -> Self{
-        HIDKeycode {
-            page: 0x07,
-            id
+impl Default for Label {
+    fn default() -> Self {
+        Label {
+            custom_text: None,
+            visible: true,
+            font: Font::Default,
+            font_size: 12.,
+            position: LabelPosition::default(),
         }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Font {
-    Default,
-    Named(String),
+fn is_default_font_size(size: &f32) -> bool {
+    *size == 12.0
 }
-
-impl Default for Font {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
 
 /*
    _________
@@ -707,12 +784,36 @@ pub enum LabelPosition {
 
 impl Default for LabelPosition {
     fn default() -> Self {
-        Self::TopLeft
+        Self::MiddleCenter
     }
 }
 
-//Default keyboard
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Font {
+    Default,
+    Named(String),
+}
 
+impl Default for Font {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+//Serializer skip functions
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
+
+fn is_zero<T: Zero>(value: &T) -> bool {
+    value.is_zero()
+}
+
+fn is_one<T: One + PartialEq>(value: &T) -> bool {
+    value.is_one()
+}
+
+//Default keyboard
 pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
 
     let mut builder = KeyboardKeyBuilder::new();
@@ -894,6 +995,8 @@ pub fn make_default_ansi_104_keyboard() -> KeyboardLayout {
     KeyboardLayout::from_keylist(default_ansi_104_keylist)
 }
 
+
+//Tests may be AI generated
 #[test]
 fn print_default_ansi_104_keyboard_json() {//AI generated
     let keyboard = make_default_ansi_104_keyboard();
@@ -904,14 +1007,79 @@ fn print_default_ansi_104_keyboard_json() {//AI generated
         .expect("failed to write keyboard.json");
 }
 #[test]
-fn deserializes_sparse_modifier_list() {//AI generated
-    let json = r#"{"0":"Shift","3":"AltGr"}"#;
+fn default_ansi_104_keyboard_json_round_trips() {//AI generated
+    let original = make_default_ansi_104_keyboard();
 
-    let list: ModifierList =
-        serde_json::from_str(json).expect("failed to deserialize modifier list");
+    let json = serde_json::to_string(&original)
+        .expect("failed to serialize keyboard");
 
-    assert_eq!(list.modifier_list[0].as_deref(), Some("Shift"));
-    assert_eq!(list.modifier_list[1], None);
-    assert_eq!(list.modifier_list[2], None);
-    assert_eq!(list.modifier_list[3].as_deref(), Some("AltGr"));
+    let deserialized: KeyboardLayout = serde_json::from_str(&json)
+        .expect("failed to deserialize keyboard");
+
+    let original_json = serde_json::to_value(&original).unwrap();
+    let round_trip_json = serde_json::to_value(&deserialized).unwrap();
+
+    assert!(
+        original_json == round_trip_json,
+        "{}",
+        first_difference(&original_json, &round_trip_json, "$")
+            .unwrap_or_else(|| "values differ".to_owned())
+    );
+}
+#[test]
+fn modifier_list_rejects_out_of_range_indices() {//AI generated
+    let result: Result<ModifierList, _> =
+        serde_json::from_str(r#"{"8":"Shift"}"#);
+
+    assert!(result.is_err(), "modifier index 8 should be rejected");
+}
+
+fn first_difference(
+    left: &serde_json::Value,
+    right: &serde_json::Value,
+    path: &str,
+) -> Option<String> {
+    use serde_json::Value;
+
+    if left == right {
+        return None;
+    }
+
+    match (left, right) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (key, value) in a {
+                let child_path = format!("{path}.{key}");
+                match b.get(key) {
+                    Some(other) => {
+                        if let Some(diff) = first_difference(value, other, &child_path) {
+                            return Some(diff);
+                        }
+                    }
+                    None => return Some(format!("{child_path}: missing from round-trip value")),
+                }
+            }
+
+            for key in b.keys() {
+                if !a.contains_key(key) {
+                    return Some(format!("{path}.{key}: added in round-trip value"));
+                }
+            }
+
+            None
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            for (i, (av, bv)) in a.iter().zip(b).enumerate() {
+                if let Some(diff) = first_difference(av, bv, &format!("{path}[{i}]")) {
+                    return Some(diff);
+                }
+            }
+
+            if a.len() != b.len() {
+                Some(format!("{path}: array lengths differ ({} vs {})", a.len(), b.len()))
+            } else {
+                None
+            }
+        }
+        _ => Some(format!("{path}: {left} vs {right}")),
+    }
 }

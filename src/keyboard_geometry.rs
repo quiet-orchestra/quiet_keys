@@ -1,4 +1,4 @@
-use num_traits::{Euclid, Float, FloatConst};
+use num_traits::{Euclid, Float, FloatConst, One};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -135,4 +135,83 @@ impl<T: Float + FloatConst + Euclid + Copy> Angle<T> {
     
 }
 
+pub fn angle_is_zero(angle: &Angle<f32>) -> bool {
+    angle.in_turns() == 0.
+}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    #[serde(skip_serializing_if = "is_one")]
+    pub width: f32,
+    #[serde(skip_serializing_if = "is_one")]
+    pub height: f32,
+}
+
+impl Default for Rect {
+    fn default() -> Self {
+        Rect {x: 0., y: 0., width: 1., height: 1.}
+    }
+}
+
+impl Rect {
+    pub fn within_rect(&self, point: Point) -> bool {
+        point.x > self.x && 
+        point.x < self.x2() &&
+        point.y > self.y &&
+        point.y < self.y2()
+    }
+
+    fn x2(&self) -> f32{
+        self.x + self.width
+    }
+
+    fn y2(&self) -> f32{
+        self.y + self.height
+    }
+
+    pub fn get_top_left(&self) -> Point{
+        Point { x: self.x, y: self.y }
+    }
+
+    pub fn get_top_right(&self) -> Point{
+        Point { x: self.x2(), y: self.y }
+    }
+
+    pub fn get_bottom_left(&self) -> Point{
+        Point { x: self.x, y: self.y2() }
+    }
+
+    pub fn get_bottom_right(&self) -> Point{
+        Point { x: self.x2(), y: self.y2() }
+    }
+
+    pub fn get_center(&self) -> Point{
+        Point { x: self.x + (self.width / 2.) , y: self.y + (self.height / 2.)}
+    }
+
+    pub fn scale_from_center(self, width_scale: f32, height_scale: f32) -> Self {
+        let center = self.get_center();
+        let Rect { x: _, y: _, width, height } = self;
+
+        let width = width * width_scale;
+        let height = height * height_scale;
+
+        let x = center.x - (width / 2.);
+        let y: f32 = center.y - (height / 2.);
+        return Rect { x, y, width, height };
+    }
+
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+fn is_one<T: One + PartialEq>(value: &T) -> bool {
+    value.is_one()
+}

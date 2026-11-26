@@ -3,8 +3,9 @@
 mod app;
 pub use app::TemplateApp;
 
-mod keyboardlayout;
-pub use keyboardlayout::*;
+mod keyboard_layout;
+pub use keyboard_layout::*;
 
-mod angle_types;
-pub use angle_types::Angle;
+mod keyboard_geometry;
+pub use keyboard_geometry::{Angle, Rect, Point, angle_is_zero};
+

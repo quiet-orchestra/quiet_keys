@@ -1,4 +1,4 @@
-use crate::{KeyboardLayout, make_default_ansi_104_keyboard};
+use crate::{KeyboardLayout, ansi104, };
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -17,7 +17,7 @@ impl Default for TemplateApp {
         Self {
             // Example stuff:
             label: "Hello World!".to_owned(),
-            keyboardlayout: make_default_ansi_104_keyboard(),
+            keyboardlayout: ansi104::build_keyboard(),
             temp_value: 2.7,
         }
     }

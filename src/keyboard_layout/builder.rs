@@ -1,4 +1,11 @@
-use crate::{Point, Rect, firmware_collection::HIDKeycode, key_output_collection::*, keys::*, labels::*, modifiers::*};
+use crate::{
+    geometry::{Point, Rect},
+    firmware_collection::HIDKeycode, 
+    key_output_collection::*, 
+    keys::*, 
+    labels::*, 
+    modifiers::*
+};
 
 
 

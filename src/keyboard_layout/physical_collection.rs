@@ -1,6 +1,6 @@
 
 use serde::{Deserialize, Serialize};
-use crate::{Angle, Rect, angle_is_zero};
+use crate::geometry::{Angle, Rect, angle_is_zero};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]

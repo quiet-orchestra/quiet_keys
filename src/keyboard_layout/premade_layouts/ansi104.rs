@@ -1,4 +1,4 @@
-use crate::{KeyboardLayout::{self}, builder::KeyboardKeyBuilder, keys::{Key, KeyList}, modifiers::ModifierIndex};
+use crate::{KeyboardLayout, builder::KeyboardKeyBuilder, keys::{Key, KeyList}, modifiers::ModifierIndex};
 
 //Default keyboard
 pub fn build_keyboard() -> KeyboardLayout {

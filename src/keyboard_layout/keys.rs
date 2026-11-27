@@ -1,5 +1,8 @@
 use crate::{
-    Angle::Turns, KeyboardLayout, Rect, firmware_collection::*, key_output_collection::*,
+    geometry::{Angle::Turns, Rect},
+    KeyboardLayout, 
+    firmware_collection::*, 
+    key_output_collection::*,
     modifiers::*, physical_collection::*,
 };
 use serde::{Deserialize, Serialize};

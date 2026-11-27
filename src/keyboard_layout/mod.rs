@@ -9,7 +9,7 @@ use crate::key_output_collection::KeyOutputLayout;
 use crate::physical_collection::PhysicalLayout;
 
 //Exports
-pub mod ansi104;
+pub mod premade_layouts;
 pub mod builder;
 pub mod labels;
 pub mod modifiers;
@@ -17,6 +17,7 @@ pub mod keys;
 pub mod physical_collection;
 pub mod firmware_collection;
 pub mod key_output_collection;
+pub mod geometry;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -27,14 +28,6 @@ pub struct KeyboardLayout {
     pub firmware_layout: FirmwareLayout,
     pub key_output_layout: KeyOutputLayout,
 }
-
-
-
-
-
-
-
-
 
 //Serializer skip functions
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {

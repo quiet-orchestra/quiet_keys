@@ -103,7 +103,7 @@ impl eframe::App for QuietKeysApp {
         
 
         egui::Panel::bottom("settings panel")
-        .default_size(key_editor_height)
+        .exact_size(key_editor_height)
         .show(ui, |ui| {
             render_region(ui, EDITOR_BACKGROUND_COLOR, EDITOR_CONTENT_COLOR, |ui|{
                     ui.heading("Keyboard Settings");
